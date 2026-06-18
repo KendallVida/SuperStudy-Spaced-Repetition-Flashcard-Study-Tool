@@ -30,7 +30,7 @@ class Flashcard:
 
     def update_schedule(self, quality):
         if quality >= 3:
-            # Correct, advance interval
+            # Correct
             if self.repetitions == 0:
                 self.interval = 1
             elif self.repetitions == 1:
@@ -39,11 +39,12 @@ class Flashcard:
                 self.interval = round(self.interval * self.easiness)
             self.repetitions += 1
         else:
-            # Incorrect, start over
+            # Incorrect
             self.repetitions = 0
             self.interval = 1
 
-        # Adjust how easy card is based on recall quality
+        # Adjust how easy card is based on recall quality using SM-2 Formula:
+        #EF' = EF+(0.1-(5-q) * (0.08+(5-q) * 0.02))
         self.easiness = max(1.3, self.easiness + 0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02))
         self.next_review = (date.today() + timedelta(days=self.interval)).isoformat()
 
@@ -154,3 +155,81 @@ class Deck:
         with open(self.SAVE_FILE, "r") as f:
             data=json.load(f)
             self.cards = [card_from_dict(d) for d in data]
+
+COLOURS = {
+    "bg": "#1e1e2e",       #dark background
+    "surface": "#2a2a3e",  #card background
+    "accent": "#7c6af7",   #accent colour
+    "correct": "#56cfb2",  #green for correct
+    "wrong": "#e06c75",    #red for incorrect
+    "text": "cdd6f4",     #main text
+    "muted": "6c7086",    #secondary text
+    "button_bg": "3b3b52" #button background
+}
+
+FONT_TITLE = ("Segoe UI", 18, "bold")
+FONT_BODY = ("Segoe UI", 12)
+FONT_SMALL = ("Segoe UI", 10)
+FONT_CARD = ("Segoe UI", 14)
+
+class App(tk.Tk):
+    #Root app window; Manages deck and switches between "Homeview" (shows stats and navigation), "Manageview" (add/delete cards), and "ReviewView" (review due cards)
+    def __init__(self):
+        super().__init__()
+        self.title("Flashcard App")
+        self.geometry("700x520")
+        self.resizable(False, False)
+        self.configure(bg=COLOURS["bg"])
+
+        self.deck = Deck()
+        self.deck.load()
+
+        self.container = tk.Frame(self, bg=COLOURS["bg"])
+        self.container.pack(fill="both", expand=True)
+
+        self.show_home()
+
+    #View Switching
+    def show_home(self):
+        self._clear()
+        HomeView(self.container, self).pack(fill="both", expand=True)
+
+    def show_manage(self):
+        self._clear()
+        ManageView(self.container, self).pack(fill="both", expand=True)
+
+    def show_review(self):
+        self._clear()
+        ReviewView(self.container, self).pack(fill="both", expand=True)
+
+    def _clear(self):
+        for widget in self.container.winfo_children():
+            widget.destroy()
+
+class HomeView(tk.Frame):
+    def __init__(self, parent, app):
+        super().__init__(parent, bg=COLOURS["bg"])
+        self.app = app
+
+class ManageView(tk.Frame):
+    def __init__(self, parent, app):
+        super().__init__(parent, bg=COLOURS["bg"])
+        self.app = app
+
+class AddCardDialog(tk.Toplevel):
+    def __init__(self, parent, app):
+        super().__init__(parent, bg=COLOURS["bg"])
+        self.app = app
+
+class ReviewView(tk.Frame):
+    def __init__(self, parent, app):
+        super().__init__(parent, bg=COLOURS["bg"])
+        self.app = app
+
+def main():
+    app = App()
+    app.mainloop()
+
+    if __name__ == "__main__":
+        main()
+
