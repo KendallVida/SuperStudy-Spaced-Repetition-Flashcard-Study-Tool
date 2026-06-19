@@ -162,9 +162,9 @@ COLOURS = {
     "accent": "#7c6af7",   #accent colour
     "correct": "#56cfb2",  #green for correct
     "wrong": "#e06c75",    #red for incorrect
-    "text": "cdd6f4",     #main text
-    "muted": "6c7086",    #secondary text
-    "button_bg": "3b3b52" #button background
+    "text": "#cdd6f4",     #main text
+    "muted": "#6c7086",    #secondary text
+    "button_bg": "#3b3b52" #button background
 }
 
 FONT_TITLE = ("Segoe UI", 18, "bold")
@@ -232,7 +232,7 @@ class Home(tk.Frame):
         new = sum(1 for c in self.app.deck.cards if c.repetitions == 0)
         self.stat_row(stats_frame, "total cards", total, COLOURS["text"], 0)
         self.stat_row(stats_frame, "due today", due, COLOURS["accent"], 1)
-        self.stat_row(stats_frame, "new (unseen)", new, COLOURS["accent2"], 2)
+        self.stat_row(stats_frame, "new (unseen)", new, COLOURS["correct"], 2)
 
         #Navigation
         styled_button(self, "start review", self.app.show_review, accent=True).pack(pady=(0,12))
@@ -275,7 +275,7 @@ class ManageView(tk.Frame):
         #Bottom row
         action_row = tk.Frame(self, bg=COLOURS["bg"])
         action_row.pack(pady=12, padx=20, fill="x")
-        styled_button(action_row, "add card", self._open_add_dialog, accent=True).pack(side="left")
+        styled_button(action_row, "add card", self.open_add_dialog, accent=True).pack(side="left")
         styled_button(action_row, "delete selected", self.delete_selected, danger=True).pack(side="left", padx=8)
 
     def refresh_list(self): #Clear card list and fill with cards from deck
@@ -296,9 +296,6 @@ class ManageView(tk.Frame):
         self.app.deck.remove_card(row_index)
         self.app.deck.save()
         self.refresh_list()
-
-    def _open_add_dialog(self): #Open window to add card text
-        AddCardDialog(self, self.app, self.refresh_list)
 
 class AddCardDialog(tk.Toplevel):
     def __init__(self, parent, app):
