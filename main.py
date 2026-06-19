@@ -188,22 +188,19 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Flashcard App")
-        self.geometry("700x520")
+        self.geometry("700x520") #Temporary; Done for now to allow for easier formatting as final UI configuration is decided as ratios between components is constant
         self.resizable(False, False)
         self.configure(bg=COLOURS["bg"])
-
         self.deck = Deck()
         self.deck.load()
-
         self.container = tk.Frame(self, bg=COLOURS["bg"])
         self.container.pack(fill="both", expand=True)
-
         self.show_home()
 
     #View Switching
     def show_home(self):
         self._clear()
-        HomeView(self.container, self).pack(fill="both", expand=True)
+        Home(self.container, self).pack(fill="both", expand=True)
 
     def show_manage(self):
         self._clear()
@@ -217,7 +214,7 @@ class App(tk.Tk):
         for widget in self.container.winfo_children():
             widget.destroy()
 
-class HomeView(tk.Frame):
+class Home(tk.Frame):
     def __init__(self, parent, app):
         super().__init__(parent, bg=COLOURS["bg"])
         self.app = app
@@ -233,15 +230,15 @@ class HomeView(tk.Frame):
         total = len(self.app.deck.cards)
         due = len(self.app.deck.due_cards())
         new = sum(1 for c in self.app.deck.cards if c.repetitions == 0)
-        self._stat_row(stats_frame, "total cards", total, COLOURS["text"], 0)
-        self._stat_row(stats_frame, "due today", due, COLOURS["accent"], 1)
-        self._stat_row(stats_frame, "new (unseen)", new, COLOURS["accent2"], 2)
+        self.stat_row(stats_frame, "total cards", total, COLOURS["text"], 0)
+        self.stat_row(stats_frame, "due today", due, COLOURS["accent"], 1)
+        self.stat_row(stats_frame, "new (unseen)", new, COLOURS["accent2"], 2)
 
         #Navigation
         styled_button(self, "start review", self.app.show_review, accent=True).pack(pady=(0,12))
         styled_button(self, "manage_cards", self.app.show_manage).pack()
 
-    def _stat_row(self, parent, label, value, colour, row):
+    def stat_row(self, parent, label, value, colour, row):
         tk.Label(parent, text=label, font=FONT_BODY, bg=COLOURS["surface"], fg=COLOURS["muted"]).grid(row=row, column=0)
         tk.Label(parent, text=str(value), font=("Segoe UI", 12, "bold"), bg=COLOURS["surface"], fg=colour).grid(row=row, column=1, sticky="e")
 
@@ -249,6 +246,59 @@ class ManageView(tk.Frame):
     def __init__(self, parent, app):
         super().__init__(parent, bg=COLOURS["bg"])
         self.app = app
+        self._build()
+
+    def _build(self):
+        #Header
+        header = tk.Frame(self, bg=COLOURS["bg"])
+        header.pack(fill="x", padx=20, pady=(20, 10))
+        tk.Label(header, text="manage cards", font=FONT_TITLE, bg=COLOURS["bg"], fg=COLOURS["text"]).pack(side="left")
+        styled_button(header, "home", self.app.show_home).pack(side="right")
+
+        #Card List
+        tree_frame = tk.Frame(self, bg=COLOURS["bg"])
+        tree_frame.pack(fill="both", expand=True, padx=20)
+        style = ttk.Style()
+        style.theme_use("clam")
+        style.configure("Custom.Treeview", background=COLOURS["surface"], foreground=COLOURS["text"],
+                        fieldbackground=COLOURS["surface"], rowheight=28, font=FONT_SMALL)
+        style.configure("Custom.Treeview.Heading", background=COLOURS["button_bg"], foreground=COLOURS["accent"], font=("Segoe UI", 10, "bold"))
+        self.tree = ttk.Treeview(tree_frame, columns=("type", "question", "due"), show="headings", style="Custom.Treeview", height=10)
+        self.tree.heading("type", text="type")
+        self.tree.heading("question", text="question")
+        self.tree.heading("due", text="due")
+        self.tree.column("type", width=130, anchor="w")
+        self.tree.column("question", width=360, anchor="w")
+        self.tree.column("due", width=100, anchor="center")
+        self.refresh_list()
+
+        #Bottom row
+        action_row = tk.Frame(self, bg=COLOURS["bg"])
+        action_row.pack(pady=12, padx=20, fill="x")
+        styled_button(action_row, "add card", self._open_add_dialog, accent=True).pack(side="left")
+        styled_button(action_row, "delete selected", self.delete_selected, danger=True).pack(side="left", padx=8)
+
+    def refresh_list(self): #Clear card list and fill with cards from deck
+        for row in self.tree.get_children():
+            self.tree.delete(row)
+
+        for card in self.app.deck.cards:
+            due_str = "Today" if card.is_due() else card.next_review
+            card_type = getattr(card, "CARD_TYPE", "Basic")
+            self.tree.insert(" ", "end", values=(card_type, card.questions[:55], due_str))
+
+    def delete_selected(self): #Remove selected card from deck and save
+        selected = self.tree.selection()
+        if not selected:
+            messagebox.showinfo("No selection", "Please select a card to delete.")
+            return
+        row_index = self.tree.index(selected[0])
+        self.app.deck.remove_card(row_index)
+        self.app.deck.save()
+        self.refresh_list()
+
+    def _open_add_dialog(self): #Open window to add card text
+        AddCardDialog(self, self.app, self.refresh_list)
 
 class AddCardDialog(tk.Toplevel):
     def __init__(self, parent, app):
