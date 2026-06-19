@@ -194,18 +194,18 @@ class App(tk.Tk):
 
     #View Switching
     def show_home(self):
-        self._clear()
+        self.clear()
         Home(self.container, self).pack(fill="both", expand=True)
 
     def show_manage(self):
-        self._clear()
+        self.clear()
         ManageView(self.container, self).pack(fill="both", expand=True)
 
     def show_review(self):
-        self._clear()
+        self.clear()
         ReviewView(self.container, self).pack(fill="both", expand=True)
 
-    def _clear(self):
+    def clear(self):
         for widget in self.container.winfo_children():
             widget.destroy()
 
@@ -213,9 +213,9 @@ class Home(tk.Frame):
     def __init__(self, parent, app):
         super().__init__(parent, bg=COLOURS["bg"])
         self.app = app
-        self._build()
+        self.build()
 
-    def _build(self):
+    def build(self):
         #Title
         tk.Label(self, text="Flashcards", font=FONT_TITLE, bg=COLOURS["bg"], fg=COLOURS["accent"]).pack(pady=(36,4))
 
@@ -241,9 +241,9 @@ class ManageView(tk.Frame):
     def __init__(self, parent, app):
         super().__init__(parent, bg=COLOURS["bg"])
         self.app = app
-        self._build()
+        self.build()
 
-    def _build(self):
+    def build(self):
         #Header
         header = tk.Frame(self, bg=COLOURS["bg"])
         header.pack(fill="x", padx=20, pady=(20, 10))
@@ -292,10 +292,126 @@ class ManageView(tk.Frame):
         self.app.deck.save()
         self.refresh_list()
 
+
 class AddCardDialog(tk.Toplevel):
-    def __init__(self, parent, app):
-        super().__init__(parent, bg=COLOURS["bg"])
+    def __init__(self, parent, app, on_save_callback):
+        super().__init__(parent)
         self.app = app
+        self.on_save = on_save_callback
+        self.title("Add New Card")
+        self.geometry("500x420")
+        self.resizable(False, False)
+        self.configure(bg=COLOURS["bg"])
+        self.grab_set()
+        self.card_type_var = tk.StringVar(value="Basic")
+        self.build()
+
+    def build(self):
+        tk.Label(self, text="Add New Card", font=FONT_TITLE,
+                 bg=COLOURS["bg"], fg=COLOURS["accent"]).pack(pady=(20, 12))
+
+        # Card type selector
+        type_frame = tk.Frame(self, bg=COLOURS["bg"])
+        type_frame.pack(pady=(0, 10))
+        tk.Label(type_frame, text="Card Type:", font=FONT_BODY,bg=COLOURS["bg"], fg=COLOURS["text"]).pack(side="left", padx=6)
+        type_menu = tk.OptionMenu(type_frame, self.card_type_var,"Basic", "Multiple Choice", "Cloze",command=self.on_type_change)
+        type_menu.config(bg=COLOURS["button_bg"], fg=COLOURS["text"], font=FONT_SMALL, relief="flat",activebackground=COLOURS["surface"])
+        type_menu.pack(side="left")
+        self.form_frame = tk.Frame(self, bg=COLOURS["bg"])
+        self.form_frame.pack(fill="both", expand=True, padx=30)
+        self.build_form("Basic")
+        # Save button
+        styled_button(self, "Save Card",self.save, accent=True).pack(pady=14)
+
+    def on_type_change(self, value):
+        for widget in self.form_frame.winfo_children():
+            widget.destroy()
+        self.build_form(value)
+
+    def build_form(self, card_type):
+        ff = self.form_frame
+        tk.Label(ff, text="Question:", font=FONT_SMALL, bg=COLOURS["bg"], fg=COLOURS["muted"]).pack(anchor="w", pady=(10, 2))
+        self.q_entry = tk.Text(ff, height=3, font=FONT_SMALL, bg=COLOURS["surface"], fg=COLOURS["text"],insertbackground=COLOURS["text"], relief="flat", padx=6, pady=4)
+        self.q_entry.pack(fill="x")
+
+        # Choices (Multiple Choice only)
+        self.choices_frame = None
+        self.choice_entries = []
+        if card_type == "Multiple Choice":
+            tk.Label(ff, text="Options (one per line, mark correct with *):", font=FONT_SMALL, bg=COLOURS["bg"],fg=COLOURS["muted"]).pack(anchor="w", pady=(8, 2))
+            self.choices_text = tk.Text(ff, height=4, font=FONT_SMALL, bg=COLOURS["surface"], fg=COLOURS["text"],insertbackground=COLOURS["text"],relief="flat", padx=6, pady=4)
+            self.choices_text.insert("end", "*Correct answer\nOption 2\nOption 3")
+            self.choices_text.pack(fill="x")
+        else:
+            self.choices_text = None
+
+        # Answer (all types except MC which derives it from choices)
+        if card_type != "Multiple Choice":
+            tk.Label(ff, text="Answer:", font=FONT_SMALL, bg=COLOURS["bg"], fg=COLOURS["muted"]).pack(anchor="w", pady=(8, 2))
+            self.a_entry = tk.Entry(ff, font=FONT_SMALL, bg=COLOURS["surface"], fg=COLOURS["text"], insertbackground=COLOURS["text"], relief="flat")
+            self.a_entry.pack(fill="x", ipady=4)
+        else:
+            self.a_entry = None
+
+        # Tags
+        tk.Label(ff, text="Tags (optional):", font=FONT_SMALL, bg=COLOURS["bg"], fg=COLOURS["muted"]).pack(anchor="w", pady=(8, 2))
+        self.tags_entry = tk.Entry(ff, font=FONT_SMALL, bg=COLOURS["surface"], fg=COLOURS["text"], insertbackground=COLOURS["text"],relief="flat")
+        self.tags_entry.pack(fill="x", ipady=4)
+
+    def save(self):
+        card_type = self.card_type_var.get()
+        question = self.q_entry.get("1.0", "end").strip()
+        tags = self.tags_entry.get().strip()
+
+        if not question:
+            messagebox.showwarning("Missing Field", "Please enter a question.")
+            return
+
+        if card_type == "Multiple Choice":
+            card = self.build_mc_card(question, tags)
+        elif card_type == "Cloze":
+            card = self.build_cloze_card(question, tags)
+        else:
+            card = self.build_basic_card(question, tags)
+
+        if card is None:
+            return
+
+        self.app.deck.add_card(card)
+        self.app.deck.save()
+        self.on_save()
+        self.destroy()
+
+    def build_basic_card(self, question, tags):
+        answer = self.a_entry.get().strip()
+        if not answer:
+            messagebox.showwarning("Missing Field", "Please enter an answer.")
+            return None
+        return BasicCard(question, answer, tags)
+
+    def build_mc_card(self, question, tags):
+        raw = self.choices_text.get("1.0", "end").strip().splitlines()
+        choices = [line.lstrip("*").strip() for line in raw if line.strip()]
+        correct = [line.lstrip("*").strip()
+                   for line in raw if line.strip().startswith("*")]
+        if len(choices) < 2:
+            messagebox.showwarning("Not Enough Options",
+                                   "Please enter at least 2 options.")
+            return None
+        if not correct:
+            messagebox.showwarning("No Correct Answer",
+                                   "Mark the correct answer with * at the start.")
+            return None
+        return MultipleChoiceCard(question, correct[0], choices, tags)
+
+    def build_cloze_card(self, question, tags):
+        answer = self.a_entry.get().strip()
+        if not answer:
+            messagebox.showwarning("Missing Field",
+                                   "Please enter the missing word/phrase.")
+            return None
+        return ClozeCard(question, answer, tags)
+
 
 class ReviewView(tk.Frame):
     def __init__(self, parent, app):
