@@ -6,11 +6,6 @@ from datetime import date, timedelta
 from tkinter import messagebox, ttk
 
 class Flashcard:
-    """
-    Base class for all types of flashcard
-    Uses SM-2 scheduling algorithm
-    """
-
     def __init__(self, question, answer, tags=""):
         #Card content
         self.question = question
