@@ -156,14 +156,14 @@ class Deck:
 #GUI LAYER
 
 COLOURS = {
-    "bg": "#1e1e2e",       #dark background
-    "surface": "#2a2a3e",  #card background
-    "accent": "#7c6af7",   #accent colour
-    "correct": "#56cfb2",  #green for correct
-    "wrong": "#e06c75",    #red for incorrect
-    "text": "#000000",     #main text
+    "bg": "#0d1b2a",       #dark background
+    "surface": "#1b263b",  #card background
+    "accent": "#90e0ff",   #accent colour
+    "correct": "#a7c957",  #green for correct
+    "wrong": "#e63946",    #red for incorrect
+    "text": "#e0e1dd",     #main text
     "muted": "#6c7086",    #secondary text
-    "button_bg": "#3b3b52" #button background
+    "button_bg": "#1b263b" #button background
 }
 
 FONT_TITLE = ("Segoe UI", 18, "bold")
@@ -175,7 +175,7 @@ def styled_button(parent, text, command, accent=False, danger=False): #Returns a
     bg = COLOURS["accent"] if accent else (COLOURS["wrong"] if danger else COLOURS["button_bg"])
     return tk.Button(
         parent, text=text, command=command,
-        bg=bg, fg=COLOURS["text"],
+        bg=bg, fg=COLOURS["button_bg"],
         font = FONT_BODY, relief="flat",
         padx=16, pady=8, cursor="hand2",
         activebackground=COLOURS["surface"],
@@ -528,7 +528,7 @@ class ReviewView(tk.Frame):
     def build_mc_buttons(self, card): #Create 1 button per choice for mc card
         for choice in card.choices:
             #Each button sets answer and submits on click
-            btn = tk.Button(self.mc_frame, text=choice, font=FONT_SMALL, relief="flat", bg=COLOURS["button_bg"], fg=COLOURS["text"],padx=10, pady=5, cursor="hand2",
+            btn = tk.Button(self.mc_frame, text=choice, font=FONT_SMALL, relief="flat", bg=COLOURS["button_bg"], fg=COLOURS["muted"],padx=10, pady=5, cursor="hand2",
                             command=lambda c=choice: self.mc_select(c), activebackground=COLOURS["surface"], activeforeground=COLOURS["accent"])
             btn.pack(fill="x", pady=2)
 
