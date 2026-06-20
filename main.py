@@ -280,7 +280,7 @@ class ManageView(tk.Frame):
         for card in self.app.deck.cards:
             due_str = "Today" if card.is_due() else card.next_review
             card_type = getattr(card, "CARD_TYPE", "Basic")
-            self.tree.insert(" ", "end", values=(card_type, card.questions[:55], due_str))
+            self.tree.insert(" ", "end", values=(card_type, card.question[:55], due_str))
 
     def delete_selected(self): #Remove selected card from deck and save
         selected = self.tree.selection()
@@ -539,6 +539,25 @@ class ReviewView(tk.Frame):
         self.app.deck.save()
         self.index += 1
         self.load_card()
+
+   #Session end screens
+    def show_complete(self): #Display a session complete message
+        self.clear_card_area()
+        tk.Label(self.card_frame, text="Session complete!", font=FONT_TITLE, bg=COLOURS["surface"], fg=COLOURS["accent2"]).pack(pady=30)
+        tk.Label(self.card_frame, text=f"Reviewed {len(self.queue)} card(s).", font=FONT_BODY, bg=COLOURS["surface"], fg=COLOURS["muted"]).pack()
+        styled_button(self, "Back to Home", self.app.show_home, accent=True).pack(pady=16)
+
+    def show_no_due(self): #Display message when no new cards are due
+        self.clear_card_area()
+        tk.Label(self.card_frame, text="Nothing due today!", font=FONT_TITLE, bg=COLOURS["surface"], fg=COLOURS["accent2"]).pack(pady=30)
+        tk.Label(self.card_frame, text="Add more cards or come back tomorrow.", font=FONT_BODY, bg=COLOURS["surface"], fg=COLOURS["muted"]).pack()
+        styled_button(self, "Back to Home", self.app.show_home, accent=True).pack(pady=16)
+
+    def clear_card_area(self):
+        for widget in self.card_frame.winfo_children():
+            widget.destroy()
+        self.action_frame.pack_forget()
+
 
 def main():
     app = App()
