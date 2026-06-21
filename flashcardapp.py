@@ -331,22 +331,16 @@ class Home(tk.Frame):
 
         styled_button(debug_frame, "- Day", lambda: self.shift_date(-1)).pack(side="left", padx=2)
         styled_button(debug_frame, "+ Day", lambda: self.shift_date(1)).pack(side="left", padx=2)
-        styled_button(debug_frame, "Reset", lambda: self.reset_date).pack(side="left", padx=2)
+        styled_button(debug_frame, "Reset", lambda: self.reset_date()).pack(side="left", padx=2)
 
     def shift_date(self, days): #Move simulated time forward or back by given number of days
         current = self.app.deck.today()
         self.app.deck.debug_date = current + timedelta(days=days)
-        self.refresh_debug_label()
         self.app.show_home() #Refresh stats to reflect new date
 
     def reset_date(self): #Clear the debug date override and return to the real date
         self.app.deck.debug_date = None
-        self.refresh_debug_label()
         self.app.show_home()
-
-    def refresh_debug_label(self): #Update the displayed date and its colour
-        active = self.app.deck.today()
-        self.debug_date_label.config(text=active.isoformat(), fg=COLOURS["accent"] if self.app.deck.debug_date else COLOURS["muted"])
 
 class ManageView(tk.Frame):
     """
