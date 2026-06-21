@@ -297,21 +297,15 @@ class Home(tk.Frame):
         self.build()
 
     def build(self):
-        #Outer frame wills window
-        outer = tk.Frame(self, bg=COLOURS["bg"])
-        outer.pack(fill="both", expand=True)
-        outer.grid_rowconfigure(0, weight=1)
-        outer.grid_columnconfigure(0, weight=1)
-
         #Centred inner frame
-        inner = tk.Frame(outer, bg=COLOURS["bg"])
-        inner.grid(row=0, column=0)
+        inner = tk.Frame(self, bg=COLOURS["bg"])
+        inner.pack(expand=True)
 
         #Title
-        tk.Label(self, text="Flashcards", font=FONT_TITLE, bg=COLOURS["bg"], fg=COLOURS["accent"]).pack()
+        tk.Label(inner, text="Flashcards", font=FONT_TITLE, bg=COLOURS["bg"], fg=COLOURS["accent"]).pack()
 
         #Stats panel
-        stats_frame = tk.Frame(self, bg=COLOURS["surface"], padx=24, pady=16)
+        stats_frame = tk.Frame(inner, bg=COLOURS["surface"], padx=24, pady=16)
         stats_frame.pack(pady=28, ipadx=10)
         total = len(self.app.deck.cards)
         due = len(self.app.deck.due_cards())
@@ -322,8 +316,10 @@ class Home(tk.Frame):
         self.stat_row(stats_frame, "Daily Streak", f"{self.app.deck.streak}", "#ffaf4a", 3)
 
         #Navigation
-        styled_button(self, "start review", self.app.show_review, accent=True).pack(pady=(0,12))
-        styled_button(self, "manage cards", self.app.show_manage, accent=True).pack()
+        styled_button(inner, "start review", self.app.show_review, accent=True).pack(pady=(0,12))
+        styled_button(inner, "manage cards", self.app.show_manage, accent=True).pack()
+        debug_frame = tk.Frame(self, bg=COLOURS["bg"])
+        debug_frame.pack(side="bottom", pady=8)
         self.build_debug_panel()
 
     def stat_row(self, parent, label, value, colour, row):
