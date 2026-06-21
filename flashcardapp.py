@@ -261,8 +261,8 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Flashcard App")
-        self.geometry("700x520") #Done to make initial layout development easier
-        self.resizable(False, False)
+        self.geometry("700x520")
+        self.minsize(600, 440) #Prevents window becoming too small to use
         self.configure(bg=COLOURS["bg"])
         self.deck = Deck()
         self.deck.load()
@@ -297,8 +297,18 @@ class Home(tk.Frame):
         self.build()
 
     def build(self):
+        #Outer frame wills window
+        outer = tk.Frame(self, bg=COLOURS["bg"])
+        outer.pack(fill="both", expand=True)
+        outer.grid_rowconfigure(0, weight=1)
+        outer.grid_columnconfigure(0, weight=1)
+
+        #Centred inner frame
+        inner = tk.Frame(outer, bg=COLOURS["bg"])
+        inner.grid(row=0, column=0)
+
         #Title
-        tk.Label(self, text="Flashcards", font=FONT_TITLE, bg=COLOURS["bg"], fg=COLOURS["accent"]).pack(pady=(36,4))
+        tk.Label(self, text="Flashcards", font=FONT_TITLE, bg=COLOURS["bg"], fg=COLOURS["accent"]).pack()
 
         #Stats panel
         stats_frame = tk.Frame(self, bg=COLOURS["surface"], padx=24, pady=16)
@@ -313,7 +323,7 @@ class Home(tk.Frame):
 
         #Navigation
         styled_button(self, "start review", self.app.show_review, accent=True).pack(pady=(0,12))
-        styled_button(self, "manage cards", self.app.show_manage).pack()
+        styled_button(self, "manage cards", self.app.show_manage, accent=True).pack()
         self.build_debug_panel()
 
     def stat_row(self, parent, label, value, colour, row):
@@ -329,9 +339,9 @@ class Home(tk.Frame):
         self.debug_date_label = tk.Label(debug_frame, text=active.isoformat(), font=FONT_SMALL, bg=COLOURS["bg"], fg=COLOURS["accent"] if self.app.deck.debug_date else COLOURS["muted"])
         self.debug_date_label.pack(side="left", padx=(0,8))
 
-        styled_button(debug_frame, "- Day", lambda: self.shift_date(-1)).pack(side="left", padx=2)
-        styled_button(debug_frame, "+ Day", lambda: self.shift_date(1)).pack(side="left", padx=2)
-        styled_button(debug_frame, "Reset", lambda: self.reset_date()).pack(side="left", padx=2)
+        styled_button(debug_frame, "- Day", lambda: self.shift_date(-1), accent=True).pack(side="left", padx=2)
+        styled_button(debug_frame, "+ Day", lambda: self.shift_date(1), accent=True).pack(side="left", padx=2)
+        styled_button(debug_frame, "Reset", lambda: self.reset_date(), accent=True).pack(side="left", padx=2)
 
     def shift_date(self, days): #Move simulated time forward or back by given number of days
         current = self.app.deck.today()
@@ -356,24 +366,25 @@ class ManageView(tk.Frame):
         header = tk.Frame(self, bg=COLOURS["bg"])
         header.pack(fill="x", padx=20, pady=(20, 10))
         tk.Label(header, text="manage cards", font=FONT_TITLE, bg=COLOURS["bg"], fg=COLOURS["text"]).pack(side="left")
-        styled_button(header, "home", self.app.show_home).pack(side="right")
+        styled_button(header, "home", self.app.show_home, accent=True).pack(side="right")
 
         #Card List (using treeview)
         tree_frame = tk.Frame(self, bg=COLOURS["bg"])
         tree_frame.pack(fill="both", expand=True, padx=20)
-        style = ttk.Style()
-        style.theme_use("clam")
-        style.configure("Custom.Treeview", background=COLOURS["surface"], foreground=COLOURS["text"],fieldbackground=COLOURS["surface"], rowheight=28, font=FONT_SMALL)
-        style.configure("Custom.Treeview.Heading", background=COLOURS["button_bg"], foreground=COLOURS["accent"], font=("Segoe UI", 10, "bold"))
-        self.tree = ttk.Treeview(tree_frame, columns=("type", "question", "tags", "due"), show="headings", style="Custom.Treeview", height=10)
+
+        scrollbar = ttk.Scrollbar(tree_frame, orient="vertical")
+        scrollbar.pack(side="right", fill="y")
+        self.tree = ttk.Treeview(tree_frame, columns=("type", "question", "tags", "due"), show="headings", style="Custom.Treeview", yscrollcommand=scrollbar.set)
+        scrollbar.config(command=self.tree.yview)
+
         self.tree.heading("type", text="type")
         self.tree.heading("question", text="question")
         self.tree.heading("tags", text="tags")
         self.tree.heading("due", text="due")
-        self.tree.column("type", width=130, anchor="w")
-        self.tree.column("question", width=260, anchor="w")
-        self.tree.column("tags", width=100, anchor="center")
-        self.tree.column("due", width=100, anchor="w")
+        self.tree.column("type", width=110, anchor="w", minwidth=80)
+        self.tree.column("question", width=260, anchor="w", minwidth=120)
+        self.tree.column("tags", width=100, anchor="w", minwidth=60)
+        self.tree.column("due", width=100, anchor="center", minwidth=60)
         self.tree.pack(fill="both", expand=True)
         self.refresh_list()
 
@@ -414,8 +425,9 @@ class AddCardDialog(tk.Toplevel):
         self.app = app
         self.on_save = on_save_callback
         self.title("Add New Card")
-        self.geometry("500x420")
-        self.resizable(False, False)
+        self.geometry("500x480")
+        self.minsize(420, 400)
+        self.resizable(True, True)
         self.configure(bg=COLOURS["bg"])
         self.grab_set()
         self.card_type_var = tk.StringVar(value="Basic")
@@ -459,7 +471,7 @@ class AddCardDialog(tk.Toplevel):
         #Question (all types)
         tk.Label(ff, text="Question:", font=FONT_SMALL, bg=COLOURS["bg"], fg=COLOURS["muted"]).pack(anchor="w", pady=(10, 2))
         self.q_entry = tk.Text(ff, height=3, font=FONT_SMALL, bg=COLOURS["surface"], fg=COLOURS["text"],insertbackground=COLOURS["text"], relief="flat", padx=6, pady=4)
-        self.q_entry.pack(fill="x")
+        self.q_entry.pack(fill="x", expand=False)
 
         #Choices (Multiple Choice only)
         self.choices_frame = None
@@ -585,15 +597,27 @@ class ReviewView(tk.Frame):
         self.progress_label.pack(side="left")
         styled_button(header, "← Home",self.app.show_home).pack(side="right")
 
-    def build_card_panel(self): #Build card display area - type label, question, input, feedback
+    def build_card_panel(self):
+        # Outer frame fills available space
+        outer = tk.Frame(self, bg=COLOURS["surface"])
+        outer.pack(fill="both", expand=True, padx=24, pady=16)
+        canvas = tk.Canvas(outer, bg=COLOURS["surface"], highlightthickness=0)
+        canvas.pack(side="left", fill="both", expand=True)
         self.card_frame = tk.Frame(self, bg=COLOURS["surface"],padx=28, pady=24)
-        self.card_frame.pack(fill="both", expand=True, padx=24, pady=16)
+        canvas_window = canvas.create_window((0,0), window=self.card_frame, anchor="nw")
+        def on_canvas_configure(e):
+            canvas.itemconfig(canvas_window, width=e.width)
+        canvas.bind("<Configure>", on_canvas_configure)
         self.type_label = tk.Label(self.card_frame, text="", font=FONT_SMALL, bg=COLOURS["surface"], fg=COLOURS["muted"])
         self.type_label.pack(anchor="w")
         self.tags_label = tk.Label(self.card_frame, text="", font=FONT_SMALL, bg=COLOURS["surface"], fg=COLOURS["muted"])
         self.tags_label.pack(anchor="w")
-        self.question_label = tk.Label(self.card_frame, text="", font=FONT_CARD, wraplength=580, bg=COLOURS["surface"], fg=COLOURS["text"], justify="left")
-        self.question_label.pack(anchor="w", pady=(8, 16))
+        self.question_label = tk.Label(self.card_frame, text="", font=FONT_CARD, bg=COLOURS["surface"], fg=COLOURS["text"], justify="left")
+        self.question_label.pack(anchor="w", pady=(8, 16), fill="x")
+
+        def update_wraplength(e):
+            self.question_label.config(wraplength=e.width - 56)
+        self.card_frame.bind("<Configure>", update_wraplength)
 
         #Text entry for Basic and Cloze cards
         self.answer_var = tk.StringVar()
