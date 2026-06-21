@@ -13,7 +13,7 @@ If it is installed, a small graphical window should pop up on screen.
 ## Step 3 - Run the program
 Run the main python file of `flashcardapp.py` directly to open the program and begin use.
 
-#Operation Instructions & Features
+# Operation Instructions & Features
 To create a flashcard, press the "manage card" button on the homepage and then press "add card" on the manage card page.\
 You are then prompted with 3 card types, basic, multiple choice, and cloze.\
 Basic flashcards only require a question and an answer.\
