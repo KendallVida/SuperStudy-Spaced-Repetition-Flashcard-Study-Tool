@@ -125,6 +125,8 @@ class Deck:
 
     def __init__(self):
         self.cards = []
+        self.last_session_date = None
+        self.streak = 0
 
     def add_card(self, card):
         #Add flashcard to the deck
@@ -141,7 +143,11 @@ class Deck:
 
     def save(self):
         #Serialise cards to JSON file
-        data = [card.to_dict() for card in self.cards]
+        data = {
+            "cards":[card.to_dict() for card in self.cards],
+            "last_session_date": self.last_session_date,
+            "streak": self.streak
+        }
         with open(self.SAVE_FILE, "w") as f:
             json.dump(data, f, indent=2)
 
@@ -151,7 +157,28 @@ class Deck:
             return
         with open(self.SAVE_FILE, "r") as f:
             data=json.load(f)
-            self.cards = [card_from_dict(d) for d in data]
+            self.cards = [card_from_dict(d) for d in data["cards"]]
+            self.last_session_date = data.get("last_session_date")
+            self.streak = data.get("streak", 0)
+
+    def record_session(self):
+        today = date.today()
+        today_str = today.isoformat()
+        if self.last_session_date is None:
+            self.streak = 1
+        else:
+            last = date.fromisoformat(self.last_session_date)
+            gap = (today - last).days
+
+            if gap == 0: #Already reviewed today - doesn't increment
+                return
+            elif gap == 1: #Reviewed yesterday - increase streak
+                self.streak += 1
+            else:
+                self.streak = 1 #Missed day - streak reset
+
+        self.last_session_date = today_str
+        self.save()
 
 #GUI LAYER
 
@@ -235,6 +262,7 @@ class Home(tk.Frame):
         self.stat_row(stats_frame, "total cards", total, COLOURS["text"], 0)
         self.stat_row(stats_frame, "due today", due, COLOURS["accent"], 1)
         self.stat_row(stats_frame, "new (unseen)", new, COLOURS["correct"], 2)
+        self.stat_row(stats_frame, "Daily Streak", f"{self.app.deck.streak}", "#ffaf4a", 3)
 
         #Navigation
         styled_button(self, "start review", self.app.show_review, accent=True).pack(pady=(0,12))
@@ -561,6 +589,8 @@ class ReviewView(tk.Frame):
         card.update_schedule(quality)
         self.app.deck.save()
         self.index += 1
+        if self.index >= len(self.queue): #When on last card, record the session
+            self.app.deck.record_session()
         self.load_card()
 
    #Session end screens
