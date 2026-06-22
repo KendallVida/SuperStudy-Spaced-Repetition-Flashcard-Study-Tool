@@ -75,20 +75,12 @@ class Flashcard:
         card.next_review = data["next_review"]
         return card
 
-    def content_to_dict(self):
-        return {"image_path": self.image_path}
-
 class BasicCard(Flashcard): #Simple question and answer card
     CARD_TYPE = "Basic"
 
     def __init__(self, question, answer, tags="", image_path=""):
         super().__init__(question, answer, tags)
         self.image_path = image_path
-
-    def to_dict(self):
-        data = super().to_dict()
-        data["image_path"] = self.image_path
-        return data
 
     @classmethod
     def from_dict(cls, data): #Reconstructs card from saved dictionary
@@ -134,11 +126,6 @@ class ClozeCard(Flashcard): #A "fill in the blanks" card which contains "____" w
     def __init__(self, question, answer, tags="", image_path=""):
         super().__init__(question, answer, tags)
         self.image_path = image_path
-
-    def to_dict(self):
-        data = super().to_dict()
-        data["image_path"] = self.image_path
-        return data
 
     @classmethod
     def from_dict(cls, data):
@@ -316,8 +303,6 @@ class Home(tk.Frame):
         #Navigation
         styled_button(inner, "start review", self.app.show_review, accent=True).pack(pady=(0,12)) #Begin flashcard review
         styled_button(inner, "manage cards", self.app.show_manage, accent=True).pack() #Open Manageview to manage flashcards
-        debug_frame = tk.Frame(self, bg=COLOURS["bg"])
-        debug_frame.pack(side="bottom", pady=8)
         self.build_debug_panel() #Create debug panel at bottom of page
 
     def stat_row(self, parent, label, value, colour, row):
@@ -468,8 +453,6 @@ class AddCardDialog(tk.Toplevel):
         self.q_entry.pack(fill="x", expand=False)
 
         #Choices (Multiple Choice only)
-        self.choices_frame = None
-        self.choice_entries = []
         if card_type == "Multiple Choice":
             tk.Label(ff, text="Options (one per line, mark correct with *):", font=FONT_SMALL, bg=COLOURS["bg"],fg=COLOURS["muted"]).pack(anchor="w", pady=(8, 2))
             self.choices_text = tk.Text(ff, height=4, font=FONT_SMALL, bg=COLOURS["surface"], fg=COLOURS["text"],insertbackground=COLOURS["text"],relief="flat", padx=6, pady=4)
@@ -510,7 +493,6 @@ class AddCardDialog(tk.Toplevel):
         card_type = self.card_type_var.get()
         question = self.q_entry.get("1.0", "end").strip()
         tags = self.tags_entry.get().strip()
-        image_path = self.image_path_var.get()
 
         if not question:
             messagebox.showwarning("Missing Field", "Please enter a question.")
@@ -604,8 +586,6 @@ class ReviewView(tk.Frame):
         canvas.bind("<Configure>", on_canvas_configure)
         self.type_label = tk.Label(self.card_frame, text="", font=FONT_SMALL, bg=COLOURS["surface"], fg=COLOURS["muted"])
         self.type_label.pack(anchor="w")
-        self.tags_label = tk.Label(self.card_frame, text="", font=FONT_SMALL, bg=COLOURS["surface"], fg=COLOURS["muted"])
-        self.tags_label.pack(anchor="w")
         self.question_label = tk.Label(self.card_frame, text="", font=FONT_CARD, bg=COLOURS["surface"], fg=COLOURS["text"], justify="left")
         self.question_label.pack(anchor="w", pady=(8, 16), fill="x")
 
@@ -657,7 +637,6 @@ class ReviewView(tk.Frame):
         self.type_label.config(text=f"{card_type.upper()}{tag_str}")
         self.question_label.config(text=card.question)
         self.show_image(getattr(card, "image_path", "")) #Show image if card has one
-        self.question_label.config(text=card.question)
         if isinstance(card, MultipleChoiceCard): #Show appropriate input method
             self.answer_entry.pack_forget()
             self.build_mc_buttons(card)
