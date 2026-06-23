@@ -19,8 +19,8 @@ You are then prompted with 3 card types, basic, multiple choice, and cloze.\
 Basic flashcards only require a question and an answer.\
 Multiple choice flashcards allow multiple options differentiated by line in an input box, with the correct option being differentiated by a *.\
 Cloze cards feature a blank word in the question, with the answer being used to fill in the blank spot.\
-Cloze and Basic cards are functionally the same, with the distinction being a way of catagorising the flashcards.\
-Tags can be assigned to cards in order to catagorise them (e.g Maths, English, Physics).\
+Cloze and Basic cards are functionally the same, with the distinction being a way of categorising the flashcards.\
+Tags can be assigned to cards in order to categorise them (e.g Maths, English, Physics).\
 Images can also be assigned to flashcards. They can only be .png and .gif files.\
 Card information including the type, question, tags, and next review date can be viewed on the manage cards page.\
 On the home page, you can see your due flashcards, the flashcards due today, the new (unseen) flashcards, and your daily streak.\

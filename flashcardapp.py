@@ -1,8 +1,25 @@
-import json
+import json as _json
 import os
+import sqlite3
 import tkinter as tk
 from datetime import date, timedelta
 from tkinter import messagebox, ttk, filedialog
+
+
+COLOURS = {
+    "bg": "#0d1b2a",       #dark background
+    "surface": "#1b263b",  #card background
+    "accent": "#90e0ff",   #accent colour
+    "correct": "#a7c957",  #green for correct
+    "wrong": "#e63946",    #red for incorrect
+    "text": "#e0e1dd",     #main text
+    "muted": "#6c7086",    #secondary text
+    "button_bg": "#1b263b" #button background
+}
+FONT_TITLE = ("Segoe UI", 18, "bold")
+FONT_BODY = ("Segoe UI", 12)
+FONT_SMALL = ("Segoe UI", 10)
+FONT_CARD = ("Segoe UI", 14)
 
 class Flashcard:
     """
@@ -136,99 +153,143 @@ class ClozeCard(Flashcard): #A "fill in the blanks" card which contains "____" w
         card.next_review = data["next_review"]
         return card
 
-CARD_CLASSES = {"BasicCard": BasicCard,
-                "MultipleChoiceCard": MultipleChoiceCard,
-                "ClozeCard": ClozeCard
-                }
+class Database:
+    """
+    Manages the SQlite connection and all database operations
+    Two Tables:
+    decks - one row per deck (name, stream last_session_date)
+    cards - one row per card, linked to a deck via deck_id foreign key
+    """
 
-def card_from_dict(data):
-    #Reconstructs correct flashcard subclass from a saved dictionary
-    cls = CARD_CLASSES.get(data.get("type"), BasicCard)
-    return cls.from_dict(data)
-
-class Deck:
-    #A collection of flashcard objects with file persistence
-
-    SAVE_FILE = "flashcard_data.json"
+    DB_FILE = "flashcards.db"
 
     def __init__(self):
-        self.cards = []
-        self.last_session_date = None
-        self.streak = 0
-        self.debug_date = None
+        self.conn = sqlite3.connect(self.DB_FILE)
+        self.conn.row_factory = sqlite3.Row
+        self.conn.execute("PRAGMA foreign_keys = ON")
+        self.debug_date = None #Used bt debug panel to simulate a date
+        self.create_tables()
+
+    def create_tables(self): #Create decks and cards tables if they don't already exist
+        self.conn.executescript("""
+                    CREATE TABLE IF NOT EXISTS decks (
+                        id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                        name              TEXT NOT NULL UNIQUE,
+                        last_session_date TEXT,
+                        streak            INTEGER DEFAULT 0
+                    );
+                    CREATE TABLE IF NOT EXISTS cards (
+                        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                        deck_id     INTEGER NOT NULL,
+                        type        TEXT NOT NULL,
+                        question    TEXT NOT NULL,
+                        answer      TEXT NOT NULL,
+                        tags        TEXT DEFAULT '',
+                        image_path  TEXT DEFAULT '',
+                        choices     TEXT DEFAULT '',
+                        interval    INTEGER DEFAULT 1,
+                        repetitions INTEGER DEFAULT 0,
+                        easiness    REAL DEFAULT 2.5,
+                        next_review TEXT NOT NULL,
+                        FOREIGN KEY (deck_id) REFERENCES decks(id)
+                    );
+                """)
+        self.conn.commit()
 
     def today(self):
-        #Return current date, or debug date if one is set
         return self.debug_date if self.debug_date else date.today()
 
-    def add_card(self, card):
-        #Add flashcard to the deck
-        self.cards.append(card)
+    def create_deck(self, name):
+        cursor = self.conn.execute("INSERT INTO decks (name) VALUES (?)", (name,))
+        self.conn.commit()
+        return cursor.lastrowid
 
-    def remove_card(self, index):
-        #Remove card at a given list index
-        if 0 <= index < len(self.cards):
-            self.cards.pop(index)
+    def get_all_decks(self):
+        return self.conn.execute("SELECT * FROM decks").fetchall()
 
-    def due_cards(self):
-        #Return a list of cards that are due for review today
-        today = self.today()
-        return [card for card in self.cards if card.is_due(today)]
+    def get_deck(self, deck_id):
+        return self.conn.execute("SELECT * FROM decks WHERE id = ?", (deck_id,)).fetchone()
 
-    def save(self):
-        #Serialise cards to JSON file
-        data = {
-            "cards":[card.to_dict() for card in self.cards],
-            "last_session_date": self.last_session_date,
-            "streak": self.streak
-        }
-        with open(self.SAVE_FILE, "w") as f:
-            json.dump(data, f, indent=2)
+    def update_deck_streak(self, deck_id, streak, last_session_date):
+        self.conn.execute("UPDATE decks SET streak = ?, last_session_date = ? WHERE id = ?", (streak, last_session_date, deck_id))
+        self.conn.commit()
 
-    def load(self):
-        #Load cards from JSON file (if exists)
-        if not os.path.exists(self.SAVE_FILE):
-            return
-        with open(self.SAVE_FILE, "r") as f:
-            data=json.load(f)
-            self.cards = [card_from_dict(d) for d in data["cards"]]
-            self.last_session_date = data.get("last_session_date")
-            self.streak = data.get("streak", 0)
+    def delete_deck(self, deck_id):
+        self.conn.execute("DELETE FROM cards WHERE deck_id = ?", (deck_id,))
+        self.conn.execute("DELETE FROM decks WHERE id = ?", (deck_id,))
+        self.conn.commit()
 
-    def record_session(self):
+    def deck_stats(self, deck_id):
+        today = self.today().isoformat()
+        total = self.conn.execute("SELECT COUNT(*) FROM cards WHERE deck_id = ?", (deck_id,)).fetchone()[0]
+        due = self.conn.execute("SELECT COUNT(*) FROM cards WHERE deck_id = ? AND next_review <= ?", (deck_id, today)).fetchone()[0]
+        new = self.conn.execute("SELECT COUNT(*) FROM cards WHERE deck_id = ? AND repetitions = 0", (deck_id,)).fetchone()[0]
+        return {"total": total, "due": due, "new": new}
+
+    def add_card(self, deck_id, card):
+        choices_str = _json.dumps(card.choices) if hasattr(card, "choices") else ""
+        self.conn.execute("INSERT INTO cards (deck_id, type, question, answer, tags, image_path, choices, interval, repetitions, easiness, next_review) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",(
+            deck_id, card.__class__.__name__,
+            card.question, card.answer, card.tags, getattr(card, "image_path", ""), choices_str, card.interval, card.repetitions, card.easiness, card.next_review
+        ))
+        self.conn.commit()
+
+    def get_due_cards(self, deck_id):
+        today = self.today().isoformat()
+        rows = self.conn.execute("SELECT * FROM cards WHERE deck_id = ? AND next_review <= ?", (deck_id, today)).fetchall()
+        return [self.row_to_card(r) for r in rows]
+
+    def get_all_cards(self, deck_id):
+        rows = self.conn.execute("SELECT * FROM cards WHERE deck_id = ?",(deck_id,)).fetchall()
+        return [self.row_to_card(r) for r in rows]
+
+    def update_card_schedule(self, card_id, interval, repetitions, easiness, next_review):
+        self.conn.execute("""
+            UPDATE cards
+            SET interval = ?, repetitions = ?, easiness = ?, next_review = ?
+            WHERE id = ?
+            """, (interval, repetitions, easiness, next_review, card_id))
+        self.conn.commit()
+
+    def delete_card(self, card_id):
+        self.conn.execute("DELETE FROM cards WHERE id = ?",(card_id,))
+        self.conn.commit()
+
+    def row_to_card(self, row):
+        cls = CARD_CLASSES.get(row["type"], BasicCard)
+        if cls == MultipleChoiceCard:
+            choices = _json.loads(row["choices"]) if row["choices"] else []
+            card = MultipleChoiceCard(row["question"], row["answer"], choices, row["tags"])
+        else:
+            card = cls(row["question"], row["answer"], row["tags"], row["image_path"])
+        card.interval = row["interval"]
+        card.repetitions = row["repetitions"]
+        card.easiness = row["easiness"]
+        card.next_review = row["next_review"]
+        card.db_id = row["id"]
+        return card
+
+    def record_session(self, deck_id):
         today = self.today()
         today_str = today.isoformat()
-        if self.last_session_date is None:
-            self.streak = 1
+        deck = self.get_deck(deck_id)
+        streak = deck["streak"]
+        last = deck["last_session_date"]
+
+        if last is None:
+            streak = 1
         else:
-            last = date.fromisoformat(self.last_session_date)
-            gap = (today - last).days
-            if gap == 0: #Already reviewed today - doesn't increment
+            gap = (today - date.fromisoformat(last)).days
+            if gap == 0:
                 return
-            elif gap == 1: #Reviewed yesterday - increase streak
-                self.streak += 1
+            elif gap == 1:
+                streak += 1
             else:
-                self.streak = 1 #Missed day - streak reset
-        self.last_session_date = today_str
-        self.save()
+                streak = 1
 
-#GUI LAYER
+        self.update_deck_streak(deck_id, streak, today_str)
 
-COLOURS = {
-    "bg": "#0d1b2a",       #dark background
-    "surface": "#1b263b",  #card background
-    "accent": "#90e0ff",   #accent colour
-    "correct": "#a7c957",  #green for correct
-    "wrong": "#e63946",    #red for incorrect
-    "text": "#e0e1dd",     #main text
-    "muted": "#6c7086",    #secondary text
-    "button_bg": "#1b263b" #button background
-}
-
-FONT_TITLE = ("Segoe UI", 18, "bold")
-FONT_BODY = ("Segoe UI", 12)
-FONT_SMALL = ("Segoe UI", 10)
-FONT_CARD = ("Segoe UI", 14)
+CARD_CLASSES = {"BasicCard": BasicCard, "MultipleChoiceCard": MultipleChoiceCard, "ClozeCard": ClozeCard}
 
 def styled_button(parent, text, command, accent=False, danger=False): #Returns a consistently styled tkinter button, simplifying creation and ensuring consistency in the program
     bg = COLOURS["accent"] if accent else (COLOURS["wrong"] if danger else COLOURS["button_bg"])
@@ -246,16 +307,20 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Flashcard App")
-        self.geometry("700x520")
+        self.geometry("960x720")
         self.minsize(600, 440) #Prevents window becoming too small to use
         self.configure(bg=COLOURS["bg"])
-        self.deck = Deck()
-        self.deck.load()
+        self.db = Database()
+        self.active_deck = None
         self.container = tk.Frame(self, bg=COLOURS["bg"])
         self.container.pack(fill="both", expand=True)
-        self.show_home()
+        self.show_deck_select()
 
     #View Switching
+    def show_deck_select(self):
+        self.clear()
+        DeckSelectView(self.container, self).pack(fill="both", expand=True)
+
     def show_home(self): #Replace current view with Homepage
         self.clear()
         Home(self.container, self).pack(fill="both", expand=True)
@@ -272,6 +337,80 @@ class App(tk.Tk):
         for widget in self.container.winfo_children():
             widget.destroy()
 
+class DeckSelectView(tk.Frame):
+    """
+    Deck selection screen shown on launch and when returning from a deck.
+    Lists all saved decks and allows creating or deleting them.
+    """
+    def __init__(self, parent, app):
+        super().__init__(parent, bg=COLOURS["bg"])
+        self.app = app
+        self.build()
+
+    def build(self):
+        inner = tk.Frame(self, bg=COLOURS["bg"])
+        inner.pack(expand=True)
+        tk.Label(inner, text="Flashcards", font=FONT_TITLE, bg=COLOURS["bg"], fg=COLOURS["accent"]).pack(pady=(0,4))
+        tk.Label(inner, text="Select a deck to study", font=FONT_SMALL, bg=COLOURS["bg"], fg=COLOURS["muted"]).pack(pady=(0,16))
+
+        self.list_frame = tk.Frame(inner, bg=COLOURS["bg"])
+        self.list_frame.pack()
+        self.refresh_deck_list()
+
+        #New deck creation row
+        new_frame = tk.Frame(inner, bg=COLOURS["bg"])
+        new_frame.pack(pady=(16,0))
+        tk.Label(new_frame, text="New deck name:", font=FONT_SMALL, bg=COLOURS["bg"], fg=COLOURS["muted"]).pack(side="left", padx=(0,8))
+        self.new_deck_entry = tk.Entry(new_frame, font=FONT_SMALL, bg=COLOURS["surface"], fg=COLOURS["text"], insertbackground=COLOURS["text"], relief="flat")
+        self.new_deck_entry.pack(side="left", ipady=4, padx=(0,8))
+        styled_button(new_frame, "Create", self.create_deck, accent=True).pack(side="left")
+
+    def refresh_deck_list(self):
+        for widget in self.list_frame.winfo_children():
+            widget.destroy()
+        decks = self.app.db.get_all_decks()
+        if not decks:
+            tk.Label(self.list_frame, text="No decks yet - create one below!", font=FONT_SMALL, bg=COLOURS["bg"], fg=COLOURS["muted"]).pack()
+            return
+        for deck in decks:
+            stats = self.app.db.deck_stats(deck["id"])
+            row = tk.Frame(self.list_frame, bg=COLOURS["surface"], padx=12, pady=8)
+            row.pack(fill="x", pady=3)
+            info = tk.Frame(row, bg=COLOURS["surface"])
+            info.pack(side="left", fill="x", expand=True)
+            tk.Label(info, text=deck["name"], font=("Segoe UI", 12, "bold"), bg=COLOURS["surface"], fg=COLOURS["text"]).pack(anchor="w")
+            tk.Label(info,
+                     text=f"{stats['total']} cards - "
+                     f"{stats['due']} due - "
+                     f"{deck['streak']} day streak",
+                     font=FONT_SMALL, bg=COLOURS["surface"],
+                     fg=COLOURS["muted"]).pack(anchor="w")
+            styled_button(row, "Open", lambda d=deck: self.open_deck(d), accent=True).pack(side="right", padx=(8,0))
+            styled_button(row, "Delete", lambda d=deck: self.delete_deck(d), danger=True).pack(side="right")
+
+    def open_deck(self, deck):
+        self.app.active_deck = deck
+        self.app.show_home()
+
+    def create_deck(self):
+        name = self.new_deck_entry.get().strip()
+        if not name:
+            messagebox.showwarning("No name", "Please enter a deck name")
+            return
+        try:
+            deck_id = self.app.db.create_deck(name)
+            deck = self.app.db.get_deck(deck_id)
+            self.open_deck(deck)
+        except sqlite3.IntegrityError:
+            messagebox.showwarning("Duplicate Name", f"A deck called '{name} already exists'")
+
+    def delete_deck(self, deck):
+        confirmed = messagebox.askyesno("Delete Deck",
+                                        f"Delete '{deck['name']}' and all its cards? (This cannot be undone)")
+        if confirmed:
+            self.app.db.delete_deck(deck["id"])
+            self.refresh_deck_list()
+
 class Home(tk.Frame):
     """
     Home screen showing deck statistics and navigation
@@ -282,53 +421,50 @@ class Home(tk.Frame):
         self.build()
 
     def build(self):
-        #Centred inner frame
-        inner = tk.Frame(self, bg=COLOURS["bg"])
+        inner = tk.Frame(self, bg=COLOURS["bg"]) #Centred inner frame
         inner.pack(expand=True)
-
-        #Title
-        tk.Label(inner, text="Flashcards", font=FONT_TITLE, bg=COLOURS["bg"], fg=COLOURS["accent"]).pack()
-
-        #Stats panel
+        tk.Label(inner, text="Flashcards", font=FONT_TITLE, bg=COLOURS["bg"], fg=COLOURS["accent"]).pack() #Title
+        #Stats panel - fetched via single database queries
         stats_frame = tk.Frame(inner, bg=COLOURS["surface"], padx=24, pady=16)
         stats_frame.pack(pady=28, ipadx=10)
-        total = len(self.app.deck.cards)
-        due = len(self.app.deck.due_cards())
-        new = sum(1 for c in self.app.deck.cards if c.repetitions == 0)
-        self.stat_row(stats_frame, "total cards", total, COLOURS["text"], 0)
-        self.stat_row(stats_frame, "due today", due, COLOURS["accent"], 1)
-        self.stat_row(stats_frame, "new (unseen)", new, COLOURS["correct"], 2)
-        self.stat_row(stats_frame, "Daily Streak", f"{self.app.deck.streak}", "#ffaf4a", 3)
-
+        deck_id = self.app.active_deck["id"]
+        stats = self.app.db.deck_stats(deck_id)
+        streak = self.app.db.get_deck(deck_id)["streak"]
+        self.stat_row(stats_frame, "total cards", stats["total"], COLOURS["text"], 0)
+        self.stat_row(stats_frame, "due today", stats["due"], COLOURS["accent"], 1)
+        self.stat_row(stats_frame, "new (unseen)", stats["new"], COLOURS["correct"], 2)
+        self.stat_row(stats_frame, "Daily Streak", streak, "#ffaf4a", 3)
         #Navigation
         styled_button(inner, "start review", self.app.show_review, accent=True).pack(pady=(0,12)) #Begin flashcard review
         styled_button(inner, "manage cards", self.app.show_manage, accent=True).pack() #Open Manageview to manage flashcards
-        self.build_debug_panel() #Create debug panel at bottom of page
+        styled_button(inner, "all decks", self.app.show_deck_select).pack(pady=(12,0))
+
+        debug_frame = tk.Frame(self, bg=COLOURS["bg"])
+        debug_frame.pack(side="bottom", pady=16)
+        self.build_debug_panel(debug_frame) #Create debug panel at bottom of page
 
     def stat_row(self, parent, label, value, colour, row):
         tk.Label(parent, text=label, font=FONT_BODY, bg=COLOURS["surface"], fg=COLOURS["muted"]).grid(row=row, column=0)
         tk.Label(parent, text=str(value), font=("Segoe UI", 12, "bold"), bg=COLOURS["surface"], fg=colour).grid(row=row, column=1, sticky="e")
 
-    def build_debug_panel(self): #Collapsable debug panel for shifting the simulated date
-        debug_frame = tk.Frame(self, bg=COLOURS["bg"])
-        debug_frame.pack(pady=(8, 0))
+    def build_debug_panel(self, debug_frame): #Collapsable debug panel for shifting the simulated date
         tk.Label(debug_frame, text="Debug - simulated date:", font=FONT_SMALL, bg=COLOURS["bg"], fg=COLOURS["muted"]).pack(side="left", padx=(0,6))
         #Show the active date
-        active = self.app.deck.today()
-        self.debug_date_label = tk.Label(debug_frame, text=active.isoformat(), font=FONT_SMALL, bg=COLOURS["bg"], fg=COLOURS["accent"] if self.app.deck.debug_date else COLOURS["muted"])
+        active = self.app.db.today()
+        self.debug_date_label = tk.Label(debug_frame, text=active.isoformat(), font=FONT_SMALL, bg=COLOURS["bg"], fg=COLOURS["accent"] if self.app.db.debug_date else COLOURS["muted"])
         self.debug_date_label.pack(side="left", padx=(0,8))
-
+        #Debugging buttons
         styled_button(debug_frame, "- Day", lambda: self.shift_date(-1), accent=True).pack(side="left", padx=2)
         styled_button(debug_frame, "+ Day", lambda: self.shift_date(1), accent=True).pack(side="left", padx=2)
         styled_button(debug_frame, "Reset", lambda: self.reset_date(), accent=True).pack(side="left", padx=2)
 
     def shift_date(self, days): #Move simulated time forward or back by given number of days
-        current = self.app.deck.today()
-        self.app.deck.debug_date = current + timedelta(days=days)
+        current = self.app.db.today()
+        self.app.db.debug_date = current + timedelta(days=days)
         self.app.show_home() #Refresh stats to reflect new date
 
     def reset_date(self): #Clear the debug date override and return to the real date
-        self.app.deck.debug_date = None
+        self.app.db.debug_date = None
         self.app.show_home()
 
 class ManageView(tk.Frame):
@@ -376,10 +512,11 @@ class ManageView(tk.Frame):
     def refresh_list(self): #Clear card list and fill with cards from deck
         for row in self.tree.get_children():
             self.tree.delete(row)
-        for card in self.app.deck.cards:
-            due_str = "Today" if card.is_due() else card.next_review
+        deck_id = self.app.active_deck["id"]
+        for card in self.app.db.get_all_cards(deck_id):
+            due_str = "Today" if card.is_due(self.app.db.today()) else card.next_review
             card_type = getattr(card, "CARD_TYPE", "Basic")
-            self.tree.insert("", "end", values=(card_type, card.question[:55], card.tags or "-", due_str))
+            self.tree.insert("", "end", values=(card_type, card.question[:55], card.tags or "-", due_str), iid=str(card.db_id))
 
     def delete_selected(self): #Remove selected card from deck and save
         selected = self.tree.selection()
@@ -387,8 +524,8 @@ class ManageView(tk.Frame):
             messagebox.showinfo("No selection", "Please select a card to delete.")
             return
         row_index = self.tree.index(selected[0])
-        self.app.deck.remove_card(row_index)
-        self.app.deck.save()
+        card_id = int(selected[0])
+        self.app.db.delete_card(card_id)
         self.refresh_list()
 
     def open_add_dialog(self): #Open window to add dialog to card
@@ -426,8 +563,7 @@ class AddCardDialog(tk.Toplevel):
         self.form_frame = tk.Frame(self, bg=COLOURS["bg"])
         self.form_frame.pack(fill="both", expand=True, padx=30)
         self.build_form("Basic")
-        #Save button
-        styled_button(self, "Save Card",self.save, accent=True).pack(pady=14)
+        styled_button(self, "Save Card",self.save, accent=True).pack(pady=14) #Save button
 
     def pick_image(self):
         path = filedialog.askopenfilename(parent=self, title="Select image",filetypes=[("Image files", "*.png *.gif")])
@@ -446,12 +582,10 @@ class AddCardDialog(tk.Toplevel):
 
     def build_form(self, card_type): #Create appropriate input fields based on card type
         ff = self.form_frame
-
         #Question (all types)
         tk.Label(ff, text="Question:", font=FONT_SMALL, bg=COLOURS["bg"], fg=COLOURS["muted"]).pack(anchor="w", pady=(10, 2))
         self.q_entry = tk.Text(ff, height=3, font=FONT_SMALL, bg=COLOURS["surface"], fg=COLOURS["text"],insertbackground=COLOURS["text"], relief="flat", padx=6, pady=4)
         self.q_entry.pack(fill="x", expand=False)
-
         #Choices (Multiple Choice only)
         if card_type == "Multiple Choice":
             tk.Label(ff, text="Options (one per line, mark correct with *):", font=FONT_SMALL, bg=COLOURS["bg"],fg=COLOURS["muted"]).pack(anchor="w", pady=(8, 2))
@@ -460,11 +594,9 @@ class AddCardDialog(tk.Toplevel):
             self.choices_text.pack(fill="x")
         else:
             self.choices_text = None
-
         #Answer hint label for Cloze
         if card_type == "Cloze":
             tk.Label(ff, text="Write ___ in the question where the blank goes", font=FONT_SMALL, bg=COLOURS["bg"], fg=COLOURS["muted"]).pack(anchor="w",pady=(8, 2))
-
         #Answer (all types except MC which derives it from choices)
         if card_type != "Multiple Choice":
             tk.Label(ff, text="Answer:", font=FONT_SMALL, bg=COLOURS["bg"], fg=COLOURS["muted"]).pack(anchor="w", pady=(8, 2))
@@ -483,16 +615,15 @@ class AddCardDialog(tk.Toplevel):
             self.image_path_var = tk.StringVar()
             image_row = tk.Frame(ff, bg=COLOURS["bg"])
             image_row.pack(fill="x", pady=(8, 0))
-            tk.Label(image_row, text="Image(optional):", font=FONT_SMALL, bg=COLOURS["bg"], fg=COLOURS["muted"]).pack(
-                side="left")
-            tk.Label(image_row, textvariable=self.image_path_var, font=FONT_SMALL, bg=COLOURS["bg"],
-                     fg=COLOURS["muted"]).pack(side="left", pady=6)
+            tk.Label(image_row, text="Image(optional):", font=FONT_SMALL, bg=COLOURS["bg"], fg=COLOURS["muted"]).pack(side="left")
+            tk.Label(image_row, textvariable=self.image_path_var, font=FONT_SMALL, bg=COLOURS["bg"],fg=COLOURS["muted"]).pack(side="left", pady=6)
             styled_button(image_row, "Browse...", self.pick_image).pack(side="left")
 
     def save(self): #Validate inputs and save
         card_type = self.card_type_var.get()
         question = self.q_entry.get("1.0", "end").strip()
         tags = self.tags_entry.get().strip()
+        image_path=self.image_path_var.get()
 
         if not question:
             messagebox.showwarning("Missing Field", "Please enter a question.")
@@ -508,8 +639,7 @@ class AddCardDialog(tk.Toplevel):
         if card is None:
             return
 
-        self.app.deck.add_card(card)
-        self.app.deck.save()
+        self.app.db.add_card(self.app.active_deck["id"], card)
         self.on_save()
         self.destroy()
 
@@ -540,7 +670,6 @@ class AddCardDialog(tk.Toplevel):
             return None
         return ClozeCard(question, answer, tags, self.image_path_var.get())
 
-
 class ReviewView(tk.Frame):
     """
     Review session screen.
@@ -556,7 +685,7 @@ class ReviewView(tk.Frame):
     def __init__(self, parent, app):
         super().__init__(parent, bg=COLOURS["bg"])
         self.app = app
-        self.queue = app.deck.due_cards()
+        self.queue = app.db.get_due_cards(app.active_deck["id"])
         self.index = 0  # position in the review queue
         self.build()
         self.load_card()
@@ -611,7 +740,7 @@ class ReviewView(tk.Frame):
         self.submit_btn.pack(side="left", padx=4)
 
         #Rating buttons shown only after an answer is submitted
-        self.easy_btn = styled_button(self.action_frame, "Easy",lambda: self.rate(5))
+        self.easy_btn = styled_button(self.action_frame, "Easy",lambda: self.rate(5), accent=True)
         self.hard_btn = styled_button(self.action_frame, "Hard",lambda: self.rate(3))
         self.wrong_btn = styled_button(self.action_frame, "Wrong",lambda: self.rate(1), danger=True)
 
@@ -715,12 +844,12 @@ class ReviewView(tk.Frame):
 
     def rate(self, quality): #Apply SM-2, save, and move to next card
         card = self.queue[self.index]
-        card.update_schedule(quality, self.app.deck.today())
+        card.update_schedule(quality, self.app.db.today())
+        self.app.db.update_card_schedule(card.db_id, card.interval, card.repetitions, card.easiness, card.next_review)
         self.index += 1
         if self.index >= len(self.queue): #When on last card, record the session
-            self.app.deck.record_session()
-        else:
-            self.app.deck.save()
+            self.app.db.record_session(self.app.active_deck["id"])
+            self.app.active_deck = self.app.db.get_deck(self.app.active_deck["id"])
         self.load_card()
 
    #Session end screens
