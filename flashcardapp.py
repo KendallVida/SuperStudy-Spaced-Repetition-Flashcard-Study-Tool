@@ -196,37 +196,37 @@ class Database:
                 """)
         self.conn.commit()
 
-    def today(self):
+    def today(self): #Return current date, or debug date if one has been set
         return self.debug_date if self.debug_date else date.today()
 
-    def create_deck(self, name):
+    def create_deck(self, name): #Insert new deck and return its assigned id
         cursor = self.conn.execute("INSERT INTO decks (name) VALUES (?)", (name,))
         self.conn.commit()
         return cursor.lastrowid
 
-    def get_all_decks(self):
+    def get_all_decks(self): #Return all decks as a list of Row objects
         return self.conn.execute("SELECT * FROM decks").fetchall()
 
-    def get_deck(self, deck_id):
+    def get_deck(self, deck_id): #Return a single deck row by id
         return self.conn.execute("SELECT * FROM decks WHERE id = ?", (deck_id,)).fetchone()
 
-    def update_deck_streak(self, deck_id, streak, last_session_date):
+    def update_deck_streak(self, deck_id, streak, last_session_date): #Update daily streak and last session date for deck
         self.conn.execute("UPDATE decks SET streak = ?, last_session_date = ? WHERE id = ?", (streak, last_session_date, deck_id))
         self.conn.commit()
 
-    def delete_deck(self, deck_id):
+    def delete_deck(self, deck_id): #Delete a deck and all its cards
         self.conn.execute("DELETE FROM cards WHERE deck_id = ?", (deck_id,))
         self.conn.execute("DELETE FROM decks WHERE id = ?", (deck_id,))
         self.conn.commit()
 
-    def deck_stats(self, deck_id):
+    def deck_stats(self, deck_id): #Return total, due, and new card counts for a deck
         today = self.today().isoformat()
         total = self.conn.execute("SELECT COUNT(*) FROM cards WHERE deck_id = ?", (deck_id,)).fetchone()[0]
         due = self.conn.execute("SELECT COUNT(*) FROM cards WHERE deck_id = ? AND next_review <= ?", (deck_id, today)).fetchone()[0]
         new = self.conn.execute("SELECT COUNT(*) FROM cards WHERE deck_id = ? AND repetitions = 0", (deck_id,)).fetchone()[0]
         return {"total": total, "due": due, "new": new}
 
-    def add_card(self, deck_id, card):
+    def add_card(self, deck_id, card): #Insert a new card into the database linked to the given deck
         choices_str = _json.dumps(card.choices) if hasattr(card, "choices") else ""
         self.conn.execute("INSERT INTO cards (deck_id, type, question, answer, tags, image_path, choices, interval, repetitions, easiness, next_review) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",(
             deck_id, card.__class__.__name__,
@@ -234,16 +234,16 @@ class Database:
         ))
         self.conn.commit()
 
-    def get_due_cards(self, deck_id):
+    def get_due_cards(self, deck_id): #Return all cards due for review today in a deck
         today = self.today().isoformat()
         rows = self.conn.execute("SELECT * FROM cards WHERE deck_id = ? AND next_review <= ?", (deck_id, today)).fetchall()
         return [self.row_to_card(r) for r in rows]
 
-    def get_all_cards(self, deck_id):
+    def get_all_cards(self, deck_id): #Return all cards in a deck as Flashcard objects
         rows = self.conn.execute("SELECT * FROM cards WHERE deck_id = ?",(deck_id,)).fetchall()
         return [self.row_to_card(r) for r in rows]
 
-    def update_card_schedule(self, card_id, interval, repetitions, easiness, next_review):
+    def update_card_schedule(self, card_id, interval, repetitions, easiness, next_review): #Update SM-2 scheduling fields after a review
         self.conn.execute("""
             UPDATE cards
             SET interval = ?, repetitions = ?, easiness = ?, next_review = ?
@@ -251,11 +251,11 @@ class Database:
             """, (interval, repetitions, easiness, next_review, card_id))
         self.conn.commit()
 
-    def delete_card(self, card_id):
+    def delete_card(self, card_id): #Delete a single card by its db id
         self.conn.execute("DELETE FROM cards WHERE id = ?",(card_id,))
         self.conn.commit()
 
-    def row_to_card(self, row):
+    def row_to_card(self, row): #Convert a database row into the correct Flashcard subclass
         cls = CARD_CLASSES.get(row["type"], BasicCard)
         if cls == MultipleChoiceCard:
             choices = _json.loads(row["choices"]) if row["choices"] else []
@@ -269,7 +269,7 @@ class Database:
         card.db_id = row["id"]
         return card
 
-    def record_session(self, deck_id):
+    def record_session(self, deck_id): #Update the streak for the given deck after a completed review session
         today = self.today()
         today_str = today.isoformat()
         deck = self.get_deck(deck_id)
@@ -291,7 +291,7 @@ class Database:
 
 CARD_CLASSES = {"BasicCard": BasicCard, "MultipleChoiceCard": MultipleChoiceCard, "ClozeCard": ClozeCard}
 
-def styled_button(parent, text, command, accent=False, danger=False): #Returns a consistently styled tkinter button, simplifying creation and ensuring consistency in the program
+def styled_button(parent, text, command, accent=False, danger=False): #Returns a consistently styled tkinter button
     bg = COLOURS["accent"] if accent else (COLOURS["wrong"] if danger else COLOURS["button_bg"])
     return tk.Button(
         parent, text=text, command=command,
@@ -303,7 +303,10 @@ def styled_button(parent, text, command, accent=False, danger=False): #Returns a
     )
 
 class App(tk.Tk):
-    #Root app window; Manages deck and switches between "Home" (shows stats and navigation), "Manageview" (add/delete cards), and "Reviewview" (review due cards)
+    """
+    Root application window
+    Manages database and switches between views
+    """
     def __init__(self):
         super().__init__()
         self.title("Flashcard App")
@@ -317,19 +320,19 @@ class App(tk.Tk):
         self.show_deck_select()
 
     #View Switching
-    def show_deck_select(self):
+    def show_deck_select(self): #Replace current view with deck selection screen
         self.clear()
         DeckSelectView(self.container, self).pack(fill="both", expand=True)
 
-    def show_home(self): #Replace current view with Homepage
+    def show_home(self): #Replace current view with home page
         self.clear()
         Home(self.container, self).pack(fill="both", expand=True)
 
-    def show_manage(self): #Replace current view with Manageview
+    def show_manage(self): #Replace current view with card management page
         self.clear()
         ManageView(self.container, self).pack(fill="both", expand=True)
 
-    def show_review(self): #Replace current view with Reviewview
+    def show_review(self): #Replace current view with review page
         self.clear()
         ReviewView(self.container, self).pack(fill="both", expand=True)
 
@@ -345,9 +348,9 @@ class DeckSelectView(tk.Frame):
     def __init__(self, parent, app):
         super().__init__(parent, bg=COLOURS["bg"])
         self.app = app
-        self.build()
+        self.build_deck_select()
 
-    def build(self):
+    def build_deck_select(self):
         inner = tk.Frame(self, bg=COLOURS["bg"])
         inner.pack(expand=True)
         tk.Label(inner, text="Flashcards", font=FONT_TITLE, bg=COLOURS["bg"], fg=COLOURS["accent"]).pack(pady=(0,4))
@@ -365,7 +368,7 @@ class DeckSelectView(tk.Frame):
         self.new_deck_entry.pack(side="left", ipady=4, padx=(0,8))
         styled_button(new_frame, "Create", self.create_deck, accent=True).pack(side="left")
 
-    def refresh_deck_list(self):
+    def refresh_deck_list(self): #Clear deck list and refill from db
         for widget in self.list_frame.winfo_children():
             widget.destroy()
         decks = self.app.db.get_all_decks()
@@ -388,11 +391,11 @@ class DeckSelectView(tk.Frame):
             styled_button(row, "Open", lambda d=deck: self.open_deck(d), accent=True).pack(side="right", padx=(8,0))
             styled_button(row, "Delete", lambda d=deck: self.delete_deck(d), danger=True).pack(side="right")
 
-    def open_deck(self, deck):
+    def open_deck(self, deck): #Set active deck; move to homepage
         self.app.active_deck = deck
         self.app.show_home()
 
-    def create_deck(self):
+    def create_deck(self): #Create new deck with entered name
         name = self.new_deck_entry.get().strip()
         if not name:
             messagebox.showwarning("No name", "Please enter a deck name")
@@ -404,7 +407,7 @@ class DeckSelectView(tk.Frame):
         except sqlite3.IntegrityError:
             messagebox.showwarning("Duplicate Name", f"A deck called '{name} already exists'")
 
-    def delete_deck(self, deck):
+    def delete_deck(self, deck): #Confirm then delete selected deck and all its cards
         confirmed = messagebox.askyesno("Delete Deck",
                                         f"Delete '{deck['name']}' and all its cards? (This cannot be undone)")
         if confirmed:
@@ -418,9 +421,9 @@ class Home(tk.Frame):
     def __init__(self, parent, app):
         super().__init__(parent, bg=COLOURS["bg"])
         self.app = app
-        self.build()
+        self.build_home()
 
-    def build(self):
+    def build_home(self):
         inner = tk.Frame(self, bg=COLOURS["bg"]) #Centred inner frame
         inner.pack(expand=True)
         tk.Label(inner, text="Flashcards", font=FONT_TITLE, bg=COLOURS["bg"], fg=COLOURS["accent"]).pack() #Title
@@ -447,7 +450,7 @@ class Home(tk.Frame):
         tk.Label(parent, text=label, font=FONT_BODY, bg=COLOURS["surface"], fg=COLOURS["muted"]).grid(row=row, column=0)
         tk.Label(parent, text=str(value), font=("Segoe UI", 12, "bold"), bg=COLOURS["surface"], fg=colour).grid(row=row, column=1, sticky="e")
 
-    def build_debug_panel(self, debug_frame): #Collapsable debug panel for shifting the simulated date
+    def build_debug_panel(self, debug_frame): #Debug panel for shifting the simulated date
         tk.Label(debug_frame, text="Debug - simulated date:", font=FONT_SMALL, bg=COLOURS["bg"], fg=COLOURS["muted"]).pack(side="left", padx=(0,6))
         #Show the active date
         active = self.app.db.today()
@@ -458,7 +461,7 @@ class Home(tk.Frame):
         styled_button(debug_frame, "+ Day", lambda: self.shift_date(1), accent=True).pack(side="left", padx=2)
         styled_button(debug_frame, "Reset", lambda: self.reset_date(), accent=True).pack(side="left", padx=2)
 
-    def shift_date(self, days): #Move simulated time forward or back by given number of days
+    def shift_date(self, days): #Move simulated time forward or back
         current = self.app.db.today()
         self.app.db.debug_date = current + timedelta(days=days)
         self.app.show_home() #Refresh stats to reflect new date
@@ -474,9 +477,9 @@ class ManageView(tk.Frame):
     def __init__(self, parent, app):
         super().__init__(parent, bg=COLOURS["bg"])
         self.app = app
-        self.build()
+        self.build_manage()
 
-    def build(self): #build screen layout
+    def build_manage(self): #build screen layout
         #Header
         header = tk.Frame(self, bg=COLOURS["bg"])
         header.pack(fill="x", padx=20, pady=(20, 10))
@@ -518,7 +521,7 @@ class ManageView(tk.Frame):
             card_type = getattr(card, "CARD_TYPE", "Basic")
             self.tree.insert("", "end", values=(card_type, card.question[:55], card.tags or "-", due_str), iid=str(card.db_id))
 
-    def delete_selected(self): #Remove selected card from deck and save
+    def delete_selected(self): #Remove selected card from db
         selected = self.tree.selection()
         if not selected:
             messagebox.showinfo("No selection", "Please select a card to delete.")
@@ -547,9 +550,9 @@ class AddCardDialog(tk.Toplevel):
         self.configure(bg=COLOURS["bg"])
         self.grab_set()
         self.card_type_var = tk.StringVar(value="Basic")
-        self.build()
+        self.build_add_dialog()
 
-    def build(self):
+    def build_add_dialog(self):
         tk.Label(self, text="Add New Card", font=FONT_TITLE,
                  bg=COLOURS["bg"], fg=COLOURS["accent"]).pack(pady=(20, 12))
 
@@ -687,10 +690,10 @@ class ReviewView(tk.Frame):
         self.app = app
         self.queue = app.db.get_due_cards(app.active_deck["id"])
         self.index = 0  # position in the review queue
-        self.build()
+        self.build_review()
         self.load_card()
 
-    def build(self): #Create permanent widgets for review screen
+    def build_review(self): #Create permanent widgets for review screen
         self.build_header()
         self.build_card_panel()
         self.build_action_buttons()
