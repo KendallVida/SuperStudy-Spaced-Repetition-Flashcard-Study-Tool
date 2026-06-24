@@ -745,7 +745,7 @@ class ReviewView(tk.Frame):
             self.image_label.image = img  # keep reference
             self.image_label.pack(pady=8)
 
-        except Exception:
+        except IOError or OSError:
             self.image_label = tk.Label(self.card_frame, text="Could not load image", font=FONT_SMALL, bg=COLOURS["surface"], fg=COLOURS["muted"])
             self.image_label.pack()
     def build_mc_buttons(self, card): #Create 1 button per choice for mc card
