@@ -69,8 +69,6 @@ class Flashcard:
         # Return True if input is correct
         return user_input.strip().lower() == self.answer.strip().lower()
 
-
-
 class BasicCard(Flashcard): #Simple question and answer card
     CARD_TYPE = "Basic"
 
@@ -109,7 +107,7 @@ class Database:
         self.conn = sqlite3.connect(self.DB_FILE)
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA foreign_keys = ON")
-        self.debug_date = None #Used bt debug panel to simulate a date
+        self.debug_date = None #Used by debug panel to simulate a date
         self.create_tables()
 
     def create_tables(self): #Create decks and cards tables if they don't already exist
@@ -325,7 +323,7 @@ class DeckSelectView(tk.Frame):
             info.pack(side="left", fill="x", expand=True)
             tk.Label(info, text=deck["name"], font=("Segoe UI", 12, "bold"), bg=COLOURS["surface"], fg=COLOURS["text"]).pack(anchor="w")
             tk.Label(info,
-                     text=f"{stats['total']} cards - "
+                    text=f"{stats['total']} cards - "
                      f"{stats['due']} due - "
                      f"{deck['streak']} day streak",
                      font=FONT_SMALL, bg=COLOURS["surface"],
@@ -364,11 +362,13 @@ class Home(tk.Frame):
         super().__init__(parent, bg=COLOURS["bg"])
         self.app = app
         self.build_home()
+        self.debug_date_label = None
 
     def build_home(self):
         inner = tk.Frame(self, bg=COLOURS["bg"]) #Centred inner frame
         inner.pack(expand=True)
         tk.Label(inner, text="Flashcards", font=FONT_TITLE, bg=COLOURS["bg"], fg=COLOURS["accent"]).pack() #Title
+        tk.Label(inner, text=f"Current deck: {self.app.active_deck['name']}", font=FONT_SMALL, bg=COLOURS["bg"], fg=COLOURS["muted"]).pack(pady=(4,0)) #loaded deck text
         #Stats panel - fetched via single database queries
         stats_frame = tk.Frame(inner, bg=COLOURS["surface"], padx=24, pady=16)
         stats_frame.pack(pady=28, ipadx=10)
@@ -381,7 +381,7 @@ class Home(tk.Frame):
         self.stat_row(stats_frame, "Daily Streak", streak, "#ffaf4a", 3)
         #Navigation
         styled_button(inner, "start review", self.app.show_review, accent=True).pack(pady=(0,12)) #Begin flashcard review
-        styled_button(inner, "manage cards", self.app.show_manage, accent=True).pack() #Open Manageview to manage flashcards
+        styled_button(inner, "manage cards", self.app.show_manage, accent=True).pack() #Open ManageView to manage flashcards
         styled_button(inner, "all decks", self.app.show_deck_select).pack(pady=(12,0))
 
         debug_frame = tk.Frame(self, bg=COLOURS["bg"])
@@ -468,7 +468,6 @@ class ManageView(tk.Frame):
         if not selected:
             messagebox.showinfo("No selection", "Please select a card to delete.")
             return
-        row_index = self.tree.index(selected[0])
         card_id = int(selected[0])
         self.app.db.delete_card(card_id)
         self.refresh_list()
@@ -568,7 +567,6 @@ class AddCardDialog(tk.Toplevel):
         card_type = self.card_type_var.get()
         question = self.q_entry.get("1.0", "end").strip()
         tags = self.tags_entry.get().strip()
-        image_path=self.image_path_var.get()
 
         if not question:
             messagebox.showwarning("Missing Field", "Please enter a question.")
@@ -595,7 +593,7 @@ class AddCardDialog(tk.Toplevel):
             return None
         return BasicCard(question, answer, tags, self.image_path_var.get())
 
-    def build_mc_card(self, question, tags): #Construct a MC Card from the choices text box
+    def build_mc_card(self, question, tags): #Construct an MC Card from the choices text box
         raw = self.choices_text.get("1.0", "end").strip().splitlines()
         choices = [line.lstrip("*").strip() for line in raw if line.strip()]
         correct = [line.lstrip("*").strip()
@@ -632,6 +630,7 @@ class ReviewView(tk.Frame):
         self.app = app
         self.queue = app.db.get_due_cards(app.active_deck["id"])
         self.index = 0  # position in the review queue
+        self.session_log = []
         self.build_review()
         self.load_card()
 
@@ -737,24 +736,17 @@ class ReviewView(tk.Frame):
         if not os.path.exists(full_path):
             return
         if not full_path.lower().endswith((".png", ".gif")):
-            self.image_label = tk.Label(self.card_frame,
-                                        text="Image format not supported. Use PNG or GIF",
-                                        font=FONT_SMALL, bg=COLOURS["surface"],
-                                        fg=COLOURS["muted"])
+            self.image_label = tk.Label(self.card_frame, text="Image format not supported. Use PNG or GIF", font=FONT_SMALL, bg=COLOURS["surface"], fg=COLOURS["muted"])
             self.image_label.pack()
             return
         try:
             img = tk.PhotoImage(file=full_path)
-            self.image_label = tk.Label(self.card_frame, image=img,
-                                        bg=COLOURS["surface"])
+            self.image_label = tk.Label(self.card_frame, image=img, bg=COLOURS["surface"])
             self.image_label.image = img  # keep reference
             self.image_label.pack(pady=8)
 
         except Exception:
-            self.image_label = tk.Label(self.card_frame,
-                                        text="Could not load image",
-                                        font=FONT_SMALL, bg=COLOURS["surface"],
-                                        fg=COLOURS["muted"])
+            self.image_label = tk.Label(self.card_frame, text="Could not load image", font=FONT_SMALL, bg=COLOURS["surface"], fg=COLOURS["muted"])
             self.image_label.pack()
     def build_mc_buttons(self, card): #Create 1 button per choice for mc card
         for choice in card.choices:
@@ -789,6 +781,13 @@ class ReviewView(tk.Frame):
 
     def rate(self, quality): #Apply SM-2, save, and move to next card
         card = self.queue[self.index]
+
+        #Record this review as a row in the 2D array
+        #Structure: [question, card type, was correct, quality given, date]
+        was_correct = quality >= 3
+        self.session_log.append([card.question[:40], getattr(card, "CARD_TYPE", "Basic"), "Correct" if was_correct else "Incorrect", quality, self.app.db.today().isoformat()])
+
+
         card.update_schedule(quality, self.app.db.today())
         self.app.db.update_card_schedule(card.db_id, card.interval, card.repetitions, card.easiness, card.next_review)
         self.index += 1
@@ -801,7 +800,33 @@ class ReviewView(tk.Frame):
     def show_complete(self): #Display session complete message
         self.clear_card_area()
         tk.Label(self.card_frame, text="Session complete!", font=FONT_TITLE, bg=COLOURS["surface"], fg=COLOURS["correct"]).pack(pady=30)
-        tk.Label(self.card_frame, text=f"Reviewed {len(self.queue)} card(s).", font=FONT_BODY, bg=COLOURS["surface"], fg=COLOURS["muted"]).pack()
+        #Count correct from the 2D array, iterating over each row
+        correct_count = sum(1 for row in self.session_log if row[2] == "Correct")
+        total = len(self.session_log)
+        tk.Label(self.card_frame, text=f"{correct_count} of {total} correct", font=FONT_BODY, bg=COLOURS["surface"], fg=COLOURS["muted"]).pack(pady=(0,12))
+        #Build treeview to display the 2D array as a table
+        tree_frame = tk.Frame(self.card_frame, bg=COLOURS["surface"])
+        tree_frame.pack(fill="x", padx=8)
+        tree = ttk.Treeview(tree_frame, columns=("question", "type", "result", "quality"), show="headings", style="Custom.Treeview", height=min(len(self.session_log), 6))
+        tree.heading("question", text="Question")
+        tree.heading("type", text="Type")
+        tree.heading("result", text="Result")
+        tree.heading("quality", text="Quality")
+        tree.column("question", width=260, anchor="w", minwidth=100)
+        tree.column("type", width=110, anchor="w", minwidth=60)
+        tree.column("result", width=80, anchor="center", minwidth=60)
+        tree.column("quality", width=60, anchor="center", minwidth=40)
+        tree.pack(fill="x")
+
+        #Interate over the 2D array
+        for row in self.session_log:
+            tree.insert("", "end", values=(
+                row[0], #question
+                row[1], #card type
+                row[2], #correct/incorrect
+                row[3], #quality rating
+            ))
+
         styled_button(self, "Back to Home", self.app.show_home, accent=True).pack(pady=16)
 
     def show_no_due(self): #Display message when no new cards are due
