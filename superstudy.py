@@ -382,7 +382,7 @@ class Home(tk.Frame):
         #Navigation
         styled_button(inner, "start review", self.app.show_review, accent=True).pack(pady=(0,12)) #Begin flashcard review
         styled_button(inner, "manage cards", self.app.show_manage, accent=True).pack() #Open ManageView to manage flashcards
-        styled_button(inner, "all decks", self.app.show_deck_select).pack(pady=(12,0))
+        styled_button(inner, "all decks", self.app.show_deck_select, accent=True).pack(pady=(12,0))
 
         debug_frame = tk.Frame(self, bg=COLOURS["bg"])
         debug_frame.pack(side="bottom", pady=16)
@@ -685,7 +685,7 @@ class ReviewView(tk.Frame):
 
         #Rating buttons shown only after an answer is submitted
         self.easy_btn = styled_button(self.action_frame, "Easy",lambda: self.rate(5), accent=True)
-        self.hard_btn = styled_button(self.action_frame, "Hard",lambda: self.rate(3))
+        self.hard_btn = styled_button(self.action_frame, "Hard",lambda: self.rate(3), accent=True)
         self.wrong_btn = styled_button(self.action_frame, "Wrong",lambda: self.rate(1), danger=True)
 
     def load_card(self): #Display current card or show completion screen
